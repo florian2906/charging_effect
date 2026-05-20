@@ -20,3 +20,9 @@ cmake --build build
 
 # 3. Run the executable
 ./build/charging_effect
+```
+
+### Export data types overview
+* .vtp: VTK PolyData, for Surfaces, e.g. trench outline, paths of ions
+* .vtu: VTK Unstructured Grid, for for Volumes and Fields, e.g. CellSet values for eletric field
+* .vts/.vti: VTK Structured Data, for Raw Level Set Debugging, e.g. for signed-distance field (i.e. level set directly)
