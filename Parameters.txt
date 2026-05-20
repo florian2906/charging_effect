@@ -1,0 +1,17 @@
+# Domain
+gridDelta = 1. # um
+xExtent = 100. # um
+
+# Geometry
+trenchWidth = 70   # um
+trenchHeight = 170 # um
+maskHeight = 20.
+taperAngle = 0.    # degrees
+
+# Process
+numRaysPerPoint = 1000
+sticking = .1
+power = 100.
+maxVel=20
+mass=0.01
+
