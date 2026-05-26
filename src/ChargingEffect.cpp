@@ -1,11 +1,12 @@
 #include <iostream>
-#include <filesystem> // Required for changing directories
+#include <filesystem> 
 #include <viennaps.hpp>
 #include <geometries/psMakeTrench.hpp>
 #include <random>
 
 #include "Ion.hpp"
 #include "GeometryCollider.hpp"
+#include "PoissonSolver.hpp"
 
 
 int main(int argc, char** argv) {
@@ -13,16 +14,18 @@ int main(int argc, char** argv) {
     std::cout << "       VIENNAPS CHARGING EFFECT SIMULATION        " << std::endl;
     std::cout << "==================================================\n" << std::endl;
     
-    std::cout << "[1/3] INITIALIZATION & CONFIGURATION" << std::endl;
+
+
+
+    std::cout << "[1/4] INITIALIZATION & CONFIGURATION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
+    constexpr int DIM = 2;
 
     // Create the output directory if it does not already exist
     if (!std::filesystem::exists("output")) {
         std::cout << "  [*] Creating output directory 'output/'..." << std::endl;
         std::filesystem::create_directory("output");
     }
-
-    constexpr int DIM = 2;
 
     // Load Parameters from configuration file
     viennaps::util::Parameters params;
@@ -41,8 +44,10 @@ int main(int argc, char** argv) {
     std::filesystem::current_path("output");
     std::cout << "  [+] Working directory changed to ./output/\n" << std::endl;
 
+
+
     
-    std::cout << "[2/3] GEOMETRY GENERATION" << std::endl;
+    std::cout << "[2/4] GEOMETRY GENERATION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
 
     // Create Domain and Trench
@@ -74,14 +79,12 @@ int main(int argc, char** argv) {
     std::cout << "  [*] Extracting and exporting surface mesh..." << std::endl;
     auto surfaceMesh = domain->getDiskMesh(); 
     viennals::VTKWriter<double>(surfaceMesh, "01_trench_surface.vtp").apply();
-    std::cout << "      -> Saved: '01_trench_surface.vtp'" << std::endl;
-
-    std::cout << "  [*] Exporting volumetric grid for Poisson solver..." << std::endl;
-    domain->getCellSet()->writeVTU("02_volume_grid_for_poisson.vtu");
-    std::cout << "      -> Saved: '02_volume_grid_for_poisson.vtu'\n" << std::endl;
+    std::cout << "      -> Saved: '01_trench_surface.vtp'\n" << std::endl;
 
 
-    std::cout << "[3/3] MONTE CARLO CHARGE DEPOSITION" << std::endl;
+
+
+    std::cout << "[3/4] MONTE CARLO CHARGE DEPOSITION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
 
     // Set up geometry collider
@@ -137,7 +140,6 @@ int main(int argc, char** argv) {
                 hit_count++;
                 active = false; // Kill the particle
             }
-            
             // Bounds checking (Kill particle if it flies out of the domain)
             if (ion.position[1] < y_kill_bound || std::abs(ion.position[0]) > x_kill_bound) {
                 active = false; 
@@ -151,9 +153,8 @@ int main(int argc, char** argv) {
     // Export the charge distribution
     std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
     surfaceMesh->getCellData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
-    viennals::VTKWriter<double>(surfaceMesh, "03_trench_with_charge.vtp").apply();
-    std::cout << "      -> Saved: '03_trench_with_charge.vtp'" << std::endl;
-
+    viennals::VTKWriter<double>(surfaceMesh, "02_trench_with_charge.vtp").apply();
+    std::cout << "      -> Saved: '02_trench_with_charge.vtp'\n" << std::endl;
 
     std::cout << "  [*] Exporting sample ion trajectories..." << std::endl;
     auto pathMesh = viennals::Mesh<double>::New();
@@ -173,12 +174,48 @@ int main(int argc, char** argv) {
             }
         }
     }
-    viennals::VTKWriter<double>(pathMesh, "04_ion_trajectories.vtp").apply();
-    std::cout << "      -> Saved: '04_ion_trajectories.vtp'\n" << std::endl;
+    viennals::VTKWriter<double>(pathMesh, "03_ion_trajectories.vtp").apply();
+    std::cout << "      -> Saved: '03_ion_trajectories.vtp'\n" << std::endl;
+
+
+
+
+    std::cout << "\n[4/4] POISSON SOLVER & FIELD MAPPING" << std::endl;
+    std::cout << "--------------------------------------------------" << std::endl;
+
+    std::cout << "  [*] Mapping surface charge to volumetric CellSet..." << std::endl;
+    auto cellSet = domain->getCellSet();
+    
+    // Tell ViennaPS to create the array internally, initialized to 0.0, and get a pointer to it
+    auto chargeDensityPtr = cellSet->addScalarData("ChargeDensity", 0.0);
+    
+    double grid_delta = params.get("gridDelta");
+    double cell_volume = grid_delta * grid_delta; 
+
+    // Loop over all surface nodes to map their charge into the 2D grid
+    for (size_t i = 0; i < surfaceCharge.size(); ++i) {
+        if (surfaceCharge[i] > 0.0) {
+            
+            std::array<double, 3> node_coord = surfaceMesh->nodes[i];
+            int cell_idx = cellSet->getIndex(node_coord);
+            
+            // If the cell exists, deposit the charge density directly into ViennaPS's memory
+            if (cell_idx >= 0) {
+                // We use (*chargeDensityPtr) to access the underlying vector
+                (*chargeDensityPtr)[cell_idx] += surfaceCharge[i] / cell_volume;
+            }
+        }
+    }
+
+    std::cout << "  [*] Exporting volumetric grid with mapped charge..." << std::endl;
+    domain->getCellSet()->writeVTU("04_volume_grid_for_poisson.vtu");
+    std::cout << "      -> Saved: '04_volume_grid_for_poisson.vtu'\n" << std::endl;
+
+
+
 
     std::cout << "==================================================" << std::endl;
     std::cout << "               SIMULATION COMPLETE                " << std::endl;
     std::cout << "==================================================\n" << std::endl;
-
     return 0;
 }

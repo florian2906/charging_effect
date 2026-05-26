@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
 # Project name
-project("charging_effect")
+project("ChargingEffect")
 
 # Includes the CPM script from cmake folder.  
 include("cmake/cpm.cmake") 
@@ -17,10 +17,10 @@ CPMFindPackage(
 )
 
 # Tells CMake to compile C++ source file(s) into an executable program.
-add_executable(charging_effect src/charging_effect.cpp)
+add_executable(ChargingEffect src/ChargingEffect.cpp)
 
 # Tells CMake that your executable needs the ViennaPS library to work.
-target_link_libraries(charging_effect ViennaPS)
+target_link_libraries(ChargingEffect ViennaPS)
 
 # Copies "Parameters.txt" from source folder directly into build folder.
 configure_file(Parameters.txt ${CMAKE_CURRENT_BINARY_DIR}/Parameters.txt COPYONLY)
