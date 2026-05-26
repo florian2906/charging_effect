@@ -1,5 +1,5 @@
 # Domain
-gridDelta = 1. # um
+gridDelta = .5 # um
 xExtent = 100. # um
 
 # Geometry
