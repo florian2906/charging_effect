@@ -105,6 +105,7 @@ int main(int argc, char** argv) {
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<double> dist_x(-(x_extent / 2.0), (x_extent / 2.0));
+    std::vector<Ion> all_ions;
 
     for (int i = 0; i < num_ions; ++i) {
         // Initialize an Ion at the top of the domain at a random X position, pointing down
@@ -142,6 +143,7 @@ int main(int argc, char** argv) {
                 active = false; 
             }
         }
+        all_ions.push_back(ion);
     }
 
     std::cout << "      -> " << hit_count << " ions successfully hit the surface." << std::endl;
@@ -150,8 +152,29 @@ int main(int argc, char** argv) {
     std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
     surfaceMesh->getCellData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
     viennals::VTKWriter<double>(surfaceMesh, "03_trench_with_charge.vtp").apply();
-    std::cout << "      -> Saved: '03_trench_with_charge.vtp'\n" << std::endl;
+    std::cout << "      -> Saved: '03_trench_with_charge.vtp'" << std::endl;
 
+
+    std::cout << "  [*] Exporting sample ion trajectories..." << std::endl;
+    auto pathMesh = viennals::Mesh<double>::New();
+    
+    // Export the first 50 ions to visualize their paths
+    int paths_to_export = std::min(num_ions, 50); 
+    
+    for (int i = 0; i < paths_to_export; ++i) {
+        const auto& ion_path = all_ions[i].trajectory; 
+        
+        unsigned int current_nodes = pathMesh->nodes.size();
+        
+        for (int j = 0; j < ion_path.size(); ++j) {
+            pathMesh->nodes.push_back(ion_path[j]);
+            if (j > 0) {
+                pathMesh->insertNextLine({current_nodes + j - 1, current_nodes + j});
+            }
+        }
+    }
+    viennals::VTKWriter<double>(pathMesh, "04_ion_trajectories.vtp").apply();
+    std::cout << "      -> Saved: '04_ion_trajectories.vtp'\n" << std::endl;
 
     std::cout << "==================================================" << std::endl;
     std::cout << "               SIMULATION COMPLETE                " << std::endl;
