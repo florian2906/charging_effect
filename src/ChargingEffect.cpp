@@ -186,9 +186,16 @@ int main(int argc, char** argv) {
     std::cout << "  [*] Mapping surface charge to volumetric CellSet..." << std::endl;
     auto cellSet = domain->getCellSet();
     
+    // Get the total number of cells
+    int num_cells = cellSet->getElements().size();
+
     // Tell ViennaPS to create the array internally, initialized to 0.0, and get a pointer to it
     auto chargeDensityPtr = cellSet->addScalarData("ChargeDensity", 0.0);
+    chargeDensityPtr->assign(num_cells, 0.0);
     
+    // Extract the surface normals to push the charge into the gas
+    auto normals = surfaceMesh->getCellData().getVectorData("Normals");
+
     double grid_delta = params.get("gridDelta");
     double cell_volume = grid_delta * grid_delta; 
 
@@ -197,21 +204,29 @@ int main(int argc, char** argv) {
         if (surfaceCharge[i] > 0.0) {
             
             std::array<double, 3> node_coord = surfaceMesh->nodes[i];
+            std::array<double, 3> normal = normals->at(i);
+
+            // Push the coordinate half a grid-cell outward into the gas
+            node_coord[0] += normal[0] * (grid_delta * 0.5);
+            node_coord[1] += normal[1] * (grid_delta * 0.5);
+
             int cell_idx = cellSet->getIndex(node_coord);
             
             // If the cell exists, deposit the charge density directly into ViennaPS's memory
             if (cell_idx >= 0) {
-                // We use (*chargeDensityPtr) to access the underlying vector
+                // Use (*chargeDensityPtr) to access the underlying vector
                 (*chargeDensityPtr)[cell_idx] += surfaceCharge[i] / cell_volume;
             }
         }
     }
 
-    std::cout << "  [*] Exporting volumetric grid with mapped charge..." << std::endl;
+    // Call solver to compute potential and fields
+    std::cout << "  [*] Solving Poisson Equation for Electric Potential..." << std::endl;
+    PoissonSolver::solvePoisson(domain, grid_delta);
+
+    std::cout << "  [*] Exporting volumetric grid with mapped fields..." << std::endl;
     domain->getCellSet()->writeVTU("04_volume_grid_for_poisson.vtu");
     std::cout << "      -> Saved: '04_volume_grid_for_poisson.vtu'\n" << std::endl;
-
-
 
 
     std::cout << "==================================================" << std::endl;

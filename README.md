@@ -19,7 +19,7 @@ cmake -S . -B build
 cmake --build build
 
 # 3. Run the executable
-./build/charging_effect
+./build/ChargingEffect
 ```
 
 ### Export data types overview
