@@ -8,57 +8,35 @@ namespace PoissonSolver {
     inline void solvePoisson(viennaps::SmartPointer<viennaps::Domain<double, 2>> domain, double grid_delta) {
         auto cellSet = domain->getCellSet();
         auto materialIDs = cellSet->getScalarData("Material");
-        
-        // The total number of cells in the simulation
         int num_cells = materialIDs->size(); 
 
+        // Memory is guaranteed to exist and be correctly sized
         auto chargeDensityPtr = cellSet->getScalarData("ChargeDensity");
-        if (!chargeDensityPtr) {
-            std::cerr << "\n[!] FATAL: ChargeDensity array not found!" << std::endl;
-            return;
-        }
-
         auto potentialPtr = cellSet->getScalarData("ElectricPotential");
-        if (!potentialPtr) {
-            potentialPtr = cellSet->addScalarData("ElectricPotential", 0.0);
-            potentialPtr->assign(num_cells, 0.0);
-        }
-
         auto ExPtr = cellSet->getScalarData("E_x");
-        if (!ExPtr) {
-            ExPtr = cellSet->addScalarData("E_x", 0.0);
-            ExPtr->assign(num_cells, 0.0);
-        }
-
         auto EyPtr = cellSet->getScalarData("E_y");
-        if (!EyPtr) {
-            EyPtr = cellSet->addScalarData("E_y", 0.0);
-            EyPtr->assign(num_cells, 0.0);
-        }
 
         double dx2 = grid_delta * grid_delta;
         double eps_0 = 1.0;
-
         int numSteps = 1000;
+        double tolerance = 1e-6;
         
         std::cout << "  [*] Starting Jacobi iterations for Poisson solver with " << num_cells << " cells." << std::endl;
         // ==========================================
-        // 1. JACOBI ITERATION: Solve for Potential (Phi)
+        // 1. JACOBI ITERATION: Solve for Potential
         // ==========================================
-        double tolerance = 1e-6;
 
         for (int step = 0; step < numSteps; ++step) {
             std::vector<double> next_potential(*potentialPtr);
             double max_change = 0.0;
 
-            std::cout << "      -> Iterating step " << step << " / " << numSteps << "\r" << std::flush;
+            std::cout << "      -> Iterating step " << step << " / " << numSteps << std::endl;
 
             for (int i = 0; i < num_cells; ++i) {
                 // only solve the field inside the GAS
                 if (viennaps::MaterialMap::mapToMaterial(materialIDs->at(i)) != viennaps::Material::GAS) {
                     continue;
                 }
-
                 int numNeighbors = 0;
                 double neighbor_sum = 0.0;
                 auto cellNeighbors = cellSet->getNeighbors(i);

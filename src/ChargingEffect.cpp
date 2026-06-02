@@ -75,6 +75,15 @@ int main(int argc, char** argv) {
         true    
     );
 
+    // Initialize grid memory and neighborhood immediately
+    std::cout << "  [*] Building cell neighborhood and allocating fields..." << std::endl;
+    auto cellSet = domain->getCellSet();
+    cellSet->buildNeighborhood();
+    cellSet->addScalarData("ChargeDensity", 0.0);
+    cellSet->addScalarData("ElectricPotential", 0.0);
+    cellSet->addScalarData("E_x", 0.0);
+    cellSet->addScalarData("E_y", 0.0);
+
     // Export Surface Mesh for visualization
     std::cout << "  [*] Extracting and exporting surface mesh..." << std::endl;
     auto surfaceMesh = domain->getDiskMesh(); 
@@ -184,14 +193,12 @@ int main(int argc, char** argv) {
     std::cout << "--------------------------------------------------" << std::endl;
 
     std::cout << "  [*] Mapping surface charge to volumetric CellSet..." << std::endl;
-    auto cellSet = domain->getCellSet();
-    
+
     // Get the total number of cells
     int num_cells = cellSet->getElements().size();
 
-    // Tell ViennaPS to create the array internally, initialized to 0.0, and get a pointer to it
-    auto chargeDensityPtr = cellSet->addScalarData("ChargeDensity", 0.0);
-    chargeDensityPtr->assign(num_cells, 0.0);
+    // Just GET the memory pointer, it is already perfectly sized!
+    auto chargeDensityPtr = cellSet->getScalarData("ChargeDensity");
     
     // Extract the surface normals to push the charge into the gas
     auto normals = surfaceMesh->getCellData().getVectorData("Normals");
