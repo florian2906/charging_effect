@@ -2,7 +2,7 @@
 #include <array>
 #include <cmath>
 
-class Ion {
+class Particle {
     public:
     double mass;
     double charge;
@@ -10,7 +10,7 @@ class Ion {
     std::array<double, 3> velocity;
     std::vector<std::array<double, 3>> trajectory; 
 
-    Ion(double m, double q, const std::array<double, 3>& pos, const std::array<double, 3>& vel)
+    Particle(double m, double q, const std::array<double, 3>& pos, const std::array<double, 3>& vel)
         : mass(m), charge(q), position(pos), velocity(vel) {}
 
     void advanceTimeStep(double dt, double E_x, double E_y) {

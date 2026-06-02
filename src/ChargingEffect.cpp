@@ -4,9 +4,26 @@
 #include <geometries/psMakeTrench.hpp>
 #include <random>
 
-#include "Ion.hpp"
+#include "Particle.hpp"
 #include "GeometryCollider.hpp"
 #include "PoissonSolver.hpp"
+
+
+// Helper function to sample an angle from a power-cosine distribution P(theta) ~ cos^n(theta)
+// Maybe consider moving this to a utility header later on??
+double samplePowerCosineAngle(std::mt19937& gen, double n_theta, double theta_max = M_PI / 2.0) {
+    std::uniform_real_distribution<double> dist_theta(-theta_max, theta_max);
+    std::uniform_real_distribution<double> dist_u(0.0, 1.0);
+    
+    while (true) {
+        double theta = dist_theta(gen);
+        double u = dist_u(gen);
+        // Rejection condition
+        if (u <= std::pow(std::cos(theta), n_theta)) {
+            return theta;
+        }
+    }
+}
 
 
 int main(int argc, char** argv) {
@@ -102,7 +119,7 @@ int main(int argc, char** argv) {
     collider.buildSurface(surfaceMesh, params.get("gridDelta"));
 
     std::vector<double> surfaceCharge(surfaceMesh->nodes.size(), 0.0);
-    int num_ions = params.get<int>("numRaysPerPoint") * 10;
+    int num_particles = params.get<int>("numRaysPerPoint") * 10;
 
     double dt = 0.01;
     double ion_mass = params.get("mass");
@@ -112,31 +129,44 @@ int main(int argc, char** argv) {
     double y_kill_bound = -(params.get("trenchHeight")) - 5.0;
     double x_kill_bound = x_extent / 2.0;
 
-    std::cout << "  [*] Launching a batch of " << num_ions << " ions..." << std::endl;
+    std::cout << "  [*] Launching a batch of " << num_particles << " particles..." << std::endl;
     int hit_count = 0;
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<double> dist_x(-(x_extent / 2.0), (x_extent / 2.0));
-    std::vector<Ion> all_ions;
 
-    for (int i = 0; i < num_ions; ++i) {
-        // Initialize an Ion at the top of the domain at a random X position, pointing down
+    std::vector<Particle> all_particles;
+
+    // Angular distribution parameters
+    double n_theta_ion = 100.0; // High value = tightly collimated vertical beam for ions
+    double theta_max = M_PI / 2.0; // Restrict to the downward half-space
+
+    for (int i = 0; i < num_particles; ++i) {
+        // Initialize an Particle at the top of the domain at a random X position, pointing down
         double start_x = dist_x(gen);
-        Ion ion(ion_mass, 1.0, {start_x, start_y, 0.0}, {0.0, -ion_maxVel, 0.0});
+
+        // Sample Angle from Power-Cosine Distribution
+        double theta = samplePowerCosineAngle(gen, n_theta_ion, theta_max);
+
+        // Convert Angle to Velocity Components
+        double v_x = ion_maxVel * std::sin(theta);
+        double v_y = -ion_maxVel * std::cos(theta); // Negative because it points down
+
+        Particle particle(ion_mass, 1.0, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
 
         bool active = true;
 
         // Ray tracing loop
         while (active) {
-            std::array<double, 3> old_pos = ion.position;
+            std::array<double, 3> old_pos = particle.position;
 
             double E_x = 0.0;
             double E_y = 0.0;
 
-            ion.advanceTimeStep(dt, E_x, E_y);
+            particle.advanceTimeStep(dt, E_x, E_y);
 
-            double dx = ion.position[0] - old_pos[0];
-            double dy = ion.position[1] - old_pos[1];
+            double dx = particle.position[0] - old_pos[0];
+            double dy = particle.position[1] - old_pos[1];
             double step_distance = sqrt(dx*dx + dy*dy);
 
             std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
@@ -145,19 +175,19 @@ int main(int argc, char** argv) {
 
             // Handle Collision
             if (hit_id >= 0) {
-                surfaceCharge[hit_id] += ion.charge; // Deposit Charge
+                surfaceCharge[hit_id] += particle.charge; // Deposit Charge
                 hit_count++;
                 active = false; // Kill the particle
             }
             // Bounds checking (Kill particle if it flies out of the domain)
-            if (ion.position[1] < y_kill_bound || std::abs(ion.position[0]) > x_kill_bound) {
+            if (particle.position[1] < y_kill_bound || std::abs(particle.position[0]) > x_kill_bound) {
                 active = false; 
             }
         }
-        all_ions.push_back(ion);
+        all_particles.push_back(particle);
     }
 
-    std::cout << "      -> " << hit_count << " ions successfully hit the surface." << std::endl;
+    std::cout << "      -> " << hit_count << " particles successfully hit the surface." << std::endl;
 
     // Export the charge distribution
     std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
@@ -165,21 +195,23 @@ int main(int argc, char** argv) {
     viennals::VTKWriter<double>(surfaceMesh, "02_trench_with_charge.vtp").apply();
     std::cout << "      -> Saved: '02_trench_with_charge.vtp'\n" << std::endl;
 
-    std::cout << "  [*] Exporting sample ion trajectories..." << std::endl;
+    std::cout << "  [*] Exporting sample particle trajectories..." << std::endl;
     auto pathMesh = viennals::Mesh<double>::New();
     
-    // Export the first 50 ions to visualize their paths
-    int paths_to_export = std::min(num_ions, 50); 
+    // Export the first 50 particles to visualize their paths
+    int paths_to_export = std::min(num_particles, 50); 
     
     for (int i = 0; i < paths_to_export; ++i) {
-        const auto& ion_path = all_ions[i].trajectory; 
+        const auto& ion_path = all_particles[i].trajectory; 
         
         unsigned int current_nodes = pathMesh->nodes.size();
         
-        for (int j = 0; j < ion_path.size(); ++j) {
+        for (size_t j = 0; j < ion_path.size(); ++j) {
             pathMesh->nodes.push_back(ion_path[j]);
             if (j > 0) {
-                pathMesh->insertNextLine({current_nodes + j - 1, current_nodes + j});
+                unsigned int idx1 = static_cast<unsigned int>(current_nodes + j - 1);
+                unsigned int idx2 = static_cast<unsigned int>(current_nodes + j);
+                pathMesh->insertNextLine({idx1, idx2});
             }
         }
     }
