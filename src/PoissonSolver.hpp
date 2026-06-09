@@ -19,7 +19,7 @@ namespace PoissonSolver {
         double dx2 = grid_delta * grid_delta;
         double eps_0 = 1.0;
         int numSteps = 1000;
-        double tolerance = 1e-6;
+        double tolerance = 1e-4;
         
         std::cout << "  [*] Starting Jacobi iterations for Poisson solver with " << num_cells << " cells." << std::endl;
         // ==========================================
@@ -30,8 +30,10 @@ namespace PoissonSolver {
             std::vector<double> next_potential(*potentialPtr);
             double max_change = 0.0;
 
+            if (step % 100 == 0) {
             std::cout << "      -> Iterating step " << step << " / " << numSteps << std::endl;
-
+            }
+        
             for (int i = 0; i < num_cells; ++i) {
                 // only solve the field inside the GAS
                 if (viennaps::MaterialMap::mapToMaterial(materialIDs->at(i)) != viennaps::Material::GAS) {

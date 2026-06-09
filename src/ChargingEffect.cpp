@@ -14,7 +14,7 @@
 double samplePowerCosineAngle(std::mt19937& gen, double n_theta, double theta_max = M_PI / 2.0) {
     std::uniform_real_distribution<double> dist_theta(-theta_max, theta_max);
     std::uniform_real_distribution<double> dist_u(0.0, 1.0);
-    
+     // High n_theta value = tightly collimated vertical beam
     while (true) {
         double theta = dist_theta(gen);
         double u = dist_u(gen);
@@ -26,14 +26,12 @@ double samplePowerCosineAngle(std::mt19937& gen, double n_theta, double theta_ma
 }
 
 
+
 int main(int argc, char** argv) {
     std::cout << "\n==================================================" << std::endl;
     std::cout << "       VIENNAPS CHARGING EFFECT SIMULATION        " << std::endl;
     std::cout << "==================================================\n" << std::endl;
     
-
-
-
     std::cout << "[1/4] INITIALIZATION & CONFIGURATION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
     constexpr int DIM = 2;
@@ -63,7 +61,6 @@ int main(int argc, char** argv) {
 
 
 
-    
     std::cout << "[2/4] GEOMETRY GENERATION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
 
@@ -100,6 +97,8 @@ int main(int argc, char** argv) {
     cellSet->addScalarData("ElectricPotential", 0.0);
     cellSet->addScalarData("E_x", 0.0);
     cellSet->addScalarData("E_y", 0.0);
+    auto ExPtr = cellSet->getScalarData("E_x");
+    auto EyPtr = cellSet->getScalarData("E_y");
 
     // Export Surface Mesh for visualization
     std::cout << "  [*] Extracting and exporting surface mesh..." << std::endl;
@@ -108,165 +107,172 @@ int main(int argc, char** argv) {
     std::cout << "      -> Saved: '01_trench_surface.vtp'\n" << std::endl;
 
 
-
-
-    std::cout << "[3/4] MONTE CARLO CHARGE DEPOSITION" << std::endl;
+    std::cout << "[3/4] PREPARING MONTE CARLO DEPOSITION" << std::endl;
     std::cout << "--------------------------------------------------" << std::endl;
 
-    // Set up geometry collider
     std::cout << "  [*] Building Embree collision geometry..." << std::endl;
     GeometryCollider<DIM> collider;
     collider.buildSurface(surfaceMesh, params.get("gridDelta"));
 
-    std::vector<double> surfaceCharge(surfaceMesh->nodes.size(), 0.0);
     int num_particles = params.get<int>("numRaysPerPoint") * 10;
-
+    int num_charge_iterations = params.get("numChargeIterations");
+    
     double dt = 0.01;
     double ion_mass = params.get("mass");
     double ion_maxVel = params.get("maxVel");
     double x_extent = params.get("xExtent");
     double start_y = params.get("maskHeight") + 10.0;
-    double y_kill_bound = -(params.get("trenchHeight")) - 5.0;
+    double y_bottom_kill_bound = -(params.get("trenchHeight")) - 5.0;
+    double y_top_kill_bound = start_y; 
     double x_kill_bound = x_extent / 2.0;
 
-    std::cout << "  [*] Launching a batch of " << num_particles << " particles..." << std::endl;
-    int hit_count = 0;
+    double n_theta_ion = 20.0;
+    double theta_max = M_PI / 2.0; 
 
     std::mt19937 gen(std::random_device{}());
     std::uniform_real_distribution<double> dist_x(-(x_extent / 2.0), (x_extent / 2.0));
 
-    std::vector<Particle> all_particles;
-
-    // Angular distribution parameters
-    double n_theta_ion = 100.0; // High value = tightly collimated vertical beam for ions
-    double theta_max = M_PI / 2.0; // Restrict to the downward half-space
-
-    for (int i = 0; i < num_particles; ++i) {
-        // Initialize an Particle at the top of the domain at a random X position, pointing down
-        double start_x = dist_x(gen);
-
-        // Sample Angle from Power-Cosine Distribution
-        double theta = samplePowerCosineAngle(gen, n_theta_ion, theta_max);
-
-        // Convert Angle to Velocity Components
-        double v_x = ion_maxVel * std::sin(theta);
-        double v_y = -ion_maxVel * std::cos(theta); // Negative because it points down
-
-        Particle particle(ion_mass, 1.0, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
-
-        bool active = true;
-
-        // Ray tracing loop
-        while (active) {
-            std::array<double, 3> old_pos = particle.position;
-
-            double E_x = 0.0;
-            double E_y = 0.0;
-
-            particle.advanceTimeStep(dt, E_x, E_y);
-
-            double dx = particle.position[0] - old_pos[0];
-            double dy = particle.position[1] - old_pos[1];
-            double step_distance = sqrt(dx*dx + dy*dy);
-
-            std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
-        
-            int hit_id = collider.checkCollision(old_pos, direction, step_distance);
-
-            // Handle Collision
-            if (hit_id >= 0) {
-                surfaceCharge[hit_id] += particle.charge; // Deposit Charge
-                hit_count++;
-                active = false; // Kill the particle
-            }
-            // Bounds checking (Kill particle if it flies out of the domain)
-            if (particle.position[1] < y_kill_bound || std::abs(particle.position[0]) > x_kill_bound) {
-                active = false; 
-            }
-        }
-        all_particles.push_back(particle);
-    }
-
-    std::cout << "      -> " << hit_count << " particles successfully hit the surface." << std::endl;
-
-    // Export the charge distribution
-    std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
-    surfaceMesh->getCellData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
-    viennals::VTKWriter<double>(surfaceMesh, "02_trench_with_charge.vtp").apply();
-    std::cout << "      -> Saved: '02_trench_with_charge.vtp'\n" << std::endl;
-
-    std::cout << "  [*] Exporting sample particle trajectories..." << std::endl;
-    auto pathMesh = viennals::Mesh<double>::New();
-    
-    // Export the first 50 particles to visualize their paths
-    int paths_to_export = std::min(num_particles, 50); 
-    
-    for (int i = 0; i < paths_to_export; ++i) {
-        const auto& ion_path = all_particles[i].trajectory; 
-        
-        unsigned int current_nodes = pathMesh->nodes.size();
-        
-        for (size_t j = 0; j < ion_path.size(); ++j) {
-            pathMesh->nodes.push_back(ion_path[j]);
-            if (j > 0) {
-                unsigned int idx1 = static_cast<unsigned int>(current_nodes + j - 1);
-                unsigned int idx2 = static_cast<unsigned int>(current_nodes + j);
-                pathMesh->insertNextLine({idx1, idx2});
-            }
-        }
-    }
-    viennals::VTKWriter<double>(pathMesh, "03_ion_trajectories.vtp").apply();
-    std::cout << "      -> Saved: '03_ion_trajectories.vtp'\n" << std::endl;
-
-
-
-
-    std::cout << "\n[4/4] POISSON SOLVER & FIELD MAPPING" << std::endl;
-    std::cout << "--------------------------------------------------" << std::endl;
-
-    std::cout << "  [*] Mapping surface charge to volumetric CellSet..." << std::endl;
-
-    // Get the total number of cells
-    int num_cells = cellSet->getElements().size();
-
-    // Just GET the memory pointer, it is already perfectly sized!
-    auto chargeDensityPtr = cellSet->getScalarData("ChargeDensity");
-    
-    // Extract the surface normals to push the charge into the gas
     auto normals = surfaceMesh->getCellData().getVectorData("Normals");
-
+    auto chargeDensityPtr = cellSet->getScalarData("ChargeDensity");
     double grid_delta = params.get("gridDelta");
     double cell_volume = grid_delta * grid_delta; 
+    int num_cells = cellSet->getElements().size();
 
-    // Loop over all surface nodes to map their charge into the 2D grid
-    for (size_t i = 0; i < surfaceCharge.size(); ++i) {
-        if (surfaceCharge[i] > 0.0) {
+    std::vector<double> surfaceCharge(surfaceMesh->nodes.size(), 0.0);
+    
+    // Insert the array into the mesh once before the loop starts
+    surfaceMesh->getCellData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
+    // pointer to that specific array
+    auto exportedChargePtr = surfaceMesh->getCellData().getScalarData("SurfaceCharge");
+
+    // ========================================================================
+    // START CHARGING ITERATIONS
+    // ========================================================================
+    for (int iter = 0; iter < num_charge_iterations; ++iter) {
+
+        std::cout << "\n==================================================" << std::endl;
+        std::cout << "       CHARGE DEPOSITION ITERATION " << (iter + 1) << " / " << num_charge_iterations << std::endl;
+        std::cout << "  [*] Launching a batch of " << num_particles << " particles..." << std::endl;
+        
+        int hit_count = 0;
+        std::vector<Particle> all_particles; 
+
+        // --------------------------------------------------
+        // RAY TRACING
+        // --------------------------------------------------
+        for (int i = 0; i < num_particles; ++i) {
+            double start_x = dist_x(gen);
+            double theta = samplePowerCosineAngle(gen, n_theta_ion, theta_max);
+
+            double v_x = ion_maxVel * std::sin(theta);
+            double v_y = -ion_maxVel * std::cos(theta); 
+
+            Particle particle(ion_mass, 1.0, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
+            bool active = true;
+
+            while (active) {
+                std::array<double, 3> old_pos = particle.position;
+                double E_x = 0.0;
+                double E_y = 0.0;
+
+                int cell_idx = cellSet->getIndex(particle.position);
+                if (cell_idx >= 0) {
+                    E_x = ExPtr->at(cell_idx);
+                    E_y = EyPtr->at(cell_idx);
+                }
+
+                particle.advanceTimeStep(dt, E_x, E_y);
+
+                double dx = particle.position[0] - old_pos[0];
+                double dy = particle.position[1] - old_pos[1];
+                double step_distance = sqrt(dx*dx + dy*dy);
+
+                std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
             
-            std::array<double, 3> node_coord = surfaceMesh->nodes[i];
-            std::array<double, 3> normal = normals->at(i);
+                int hit_id = collider.checkCollision(old_pos, direction, step_distance);
+                double macro_charge_weight = 0.5; // The pseudo-time step (Delta t_c) controls how much charge is deposited per hit;
+                if (hit_id >= 0) {
+                    surfaceCharge[hit_id] += particle.charge * macro_charge_weight; 
+                    hit_count++;
+                    active = false; 
+                }
+                // Bounds checking (Kill particle if it flies out of the domain)
+                if (particle.position[1] < y_bottom_kill_bound || 
+                    particle.position[1] > y_top_kill_bound || 
+                    std::abs(particle.position[0]) > x_kill_bound) {
+                    
+                    active = false; 
+                }
+            }
+            all_particles.push_back(particle);
+        }
+        std::cout << "      -> " << hit_count << " particles successfully hit the surface." << std::endl;
 
-            // Push the coordinate half a grid-cell outward into the gas
-            node_coord[0] += normal[0] * (grid_delta * 0.5);
-            node_coord[1] += normal[1] * (grid_delta * 0.5);
+        // --------------------------------------------------
+        // EXPORT PARAVIEW DATA (Per Iteration)
+        // --------------------------------------------------
+        std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
+        std::string charge_filename = "02_trench_with_charge_iter" + std::to_string(iter) + ".vtp";
+        
+        // Note: In a production code, consider updating the array rather than inserting a new one 
+        // to prevent the .vtp file from bloating with multiple "SurfaceCharge" arrays, 
+        // but for prototype visualization, this will work.
+        *exportedChargePtr = surfaceCharge;
+        viennals::VTKWriter<double>(surfaceMesh, charge_filename).apply();
+        std::cout << "      -> Saved: '" << charge_filename << "'" << std::endl;
 
-            int cell_idx = cellSet->getIndex(node_coord);
+        std::cout << "  [*] Exporting sample particle trajectories..." << std::endl;
+        auto pathMesh = viennals::Mesh<double>::New();
+        int paths_to_export = std::min(num_particles, 30); 
+        
+        for (int i = 0; i < paths_to_export; ++i) {
+            const auto& ion_path = all_particles[i].trajectory; 
+            unsigned int current_nodes = pathMesh->nodes.size();
             
-            // If the cell exists, deposit the charge density directly into ViennaPS's memory
-            if (cell_idx >= 0) {
-                // Use (*chargeDensityPtr) to access the underlying vector
-                (*chargeDensityPtr)[cell_idx] += surfaceCharge[i] / cell_volume;
+            for (size_t j = 0; j < ion_path.size(); ++j) {
+                pathMesh->nodes.push_back(ion_path[j]);
+                if (j > 0) {
+                    unsigned int idx1 = static_cast<unsigned int>(current_nodes + j - 1);
+                    unsigned int idx2 = static_cast<unsigned int>(current_nodes + j);
+                    pathMesh->insertNextLine({idx1, idx2});
+                }
             }
         }
+        std::string path_filename = "03_ion_trajectories_iter" + std::to_string(iter) + ".vtp";
+        viennals::VTKWriter<double>(pathMesh, path_filename).apply();
+        std::cout << "      -> Saved: '" << path_filename << "'" << std::endl;
+
+        // --------------------------------------------------
+        // PHASE 4: POISSON SOLVER & FIELD MAPPING
+        // --------------------------------------------------
+        std::cout << "\n[4/4] POISSON SOLVER & FIELD MAPPING" << std::endl;
+        std::cout << "--------------------------------------------------" << std::endl;
+        std::cout << "  [*] Mapping surface charge to volumetric CellSet..." << std::endl;
+
+        chargeDensityPtr->assign(num_cells, 0.0);
+
+        for (size_t i = 0; i < surfaceCharge.size(); ++i) {
+            if (surfaceCharge[i] > 0.0) {
+                std::array<double, 3> node_coord = surfaceMesh->nodes[i];
+                std::array<double, 3> normal = normals->at(i);
+
+                node_coord[0] += normal[0] * (grid_delta * 0.5);
+                node_coord[1] += normal[1] * (grid_delta * 0.5);
+
+                int cell_idx = cellSet->getIndex(node_coord);
+                if (cell_idx >= 0) {
+                    (*chargeDensityPtr)[cell_idx] += surfaceCharge[i] / cell_volume;
+                }
+            }
+        }
+
+        std::cout << "  [*] Solving Poisson Equation for Electric Potential..." << std::endl;
+        PoissonSolver::solvePoisson(domain, grid_delta);
+
+        std::string vol_filename = "04_volume_grid_for_poisson_iter" + std::to_string(iter) + ".vtu";
+        domain->getCellSet()->writeVTU(vol_filename);
+        std::cout << "      -> Saved: '" << vol_filename << "'\n" << std::endl;
     }
-
-    // Call solver to compute potential and fields
-    std::cout << "  [*] Solving Poisson Equation for Electric Potential..." << std::endl;
-    PoissonSolver::solvePoisson(domain, grid_delta);
-
-    std::cout << "  [*] Exporting volumetric grid with mapped fields..." << std::endl;
-    domain->getCellSet()->writeVTU("04_volume_grid_for_poisson.vtu");
-    std::cout << "      -> Saved: '04_volume_grid_for_poisson.vtu'\n" << std::endl;
-
 
     std::cout << "==================================================" << std::endl;
     std::cout << "               SIMULATION COMPLETE                " << std::endl;

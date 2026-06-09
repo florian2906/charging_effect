@@ -3,7 +3,7 @@ gridDelta = .5 # um
 xExtent = 100. # um
 
 # Geometry
-trenchWidth = 70   # um
+trenchWidth = 40   # um
 trenchHeight = 170 # um
 maskHeight = 20.
 taperAngle = 0.    # degrees
@@ -12,6 +12,7 @@ taperAngle = 0.    # degrees
 numRaysPerPoint = 1000
 sticking = .1
 power = 100.
-maxVel=20
-mass=0.01
+maxVel= 5
+mass= 1
+numChargeIterations = 4
 
