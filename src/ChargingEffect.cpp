@@ -7,24 +7,7 @@
 #include "Particle.hpp"
 #include "GeometryCollider.hpp"
 #include "PoissonSolver.hpp"
-
-
-// Helper function to sample an angle from a power-cosine distribution P(theta) ~ cos^n(theta)
-// Maybe consider moving this to a utility header later on??
-double samplePowerCosineAngle(std::mt19937& gen, double n_theta, double theta_max = M_PI / 2.0) {
-    std::uniform_real_distribution<double> dist_theta(-theta_max, theta_max);
-    std::uniform_real_distribution<double> dist_u(0.0, 1.0);
-     // High n_theta value = tightly collimated vertical beam
-    while (true) {
-        double theta = dist_theta(gen);
-        double u = dist_u(gen);
-        // Rejection condition
-        if (u <= std::pow(std::cos(theta), n_theta)) {
-            return theta;
-        }
-    }
-}
-
+#include "Helpers.hpp"
 
 
 int main(int argc, char** argv) {

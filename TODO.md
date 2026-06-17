@@ -65,3 +65,9 @@ ___
   * [ ] Feed the steady-state, field-modified fluxes into ViennaPS surface reaction models.
 
   * [ ] Move level-set boundary to simulate actual physical etching.
+
+* [ ] **Others:**
+
+  * [ ] Fix `WARNING: PointData attempted to access scalar data...` 
+  
+  * [ ] Consider cleaning up `CharginEffect.cpp`, moving functional blocks into `Helpers.hpp` 
