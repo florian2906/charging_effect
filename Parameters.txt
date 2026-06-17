@@ -12,7 +12,8 @@ taperAngle = 0.    # degrees
 numRaysPerPoint = 1000
 sticking = .1
 power = 100.
-maxVel= 5
-mass= 1
+mass = 1.0          # Normalized Ion mass
+V_bias = 400.0      # Sheath Voltage (Volts)
+d_sh = 1000.0       # Sheath thickness (um)
 numChargeIterations = 4
 

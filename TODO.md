@@ -38,15 +38,15 @@ ___
 
 * [ ] **Implement Electron Transport:**
 
-  * [ ] Add neutralizing electron flux to prevent the "Electrostatic Mirror" effect.
+  * [x] Add electron flux
 
-  * [ ] Option A: Monte Carlo electrons ($q=-1$, low mass, broad angle, micro-timesteps).
+  * [x] Option A: Monte Carlo electrons ($q=-1$, low mass, broad angle, micro-timesteps).
 
   * [ ] Option B: Analytical geometric view-factor electron model (Eq 5 from paper).
 
 * [ ] **Physical Sheath Velocities:**
 
-  * [ ] Replace hardcoded `maxVel` in `Parameters.txt` with sheath-potential-derived initial velocities ($v_0 = \sqrt{2q|E_{ext}|d_{sh} / m}$).
+  * [x] Replace hardcoded `maxVel` in `Parameters.txt` with sheath-potential-derived initial velocities ($v_0 = \sqrt{2q|E_{ext}|d_{sh} / m}$).
 
 * [ ] **Explicit Charge-Continuity Equation:**
 
@@ -60,6 +60,14 @@ ___
 
   * [ ] Implement bottom-tapering near the conductive substrate to prevent field singularities.
 
+* [ ] **Link to reactor scale simulation:**
+  
+  * [ ] Use ion and electron fluxes from reactor scale simulation instead of randomizing? 
+  
+  * [ ] Whats the actual ratio of ions/electrons launched?
+  
+  * [ ] Right now ions are just protons; is that true?
+
 * [ ] **Profile Evolution:**
 
   * [ ] Feed the steady-state, field-modified fluxes into ViennaPS surface reaction models.
@@ -71,3 +79,7 @@ ___
   * [ ] Fix `WARNING: PointData attempted to access scalar data...` 
   
   * [ ] Consider cleaning up `CharginEffect.cpp`, moving functional blocks into `Helpers.hpp` 
+  
+  * [ ] Clean up ambigous loop counters
+  
+  * [ ] Add proper comments, docstrings, update `README.md` 

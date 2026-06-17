@@ -101,15 +101,12 @@ int main(int argc, char** argv) {
     int num_charge_iterations = params.get("numChargeIterations");
     
     double dt = 0.01;
-    double ion_mass = params.get("mass");
-    double ion_maxVel = params.get("maxVel");
     double x_extent = params.get("xExtent");
     double start_y = params.get("maskHeight") + 10.0;
     double y_bottom_kill_bound = -(params.get("trenchHeight")) - 5.0;
     double y_top_kill_bound = start_y; 
     double x_kill_bound = x_extent / 2.0;
 
-    double n_theta_ion = 20.0;
     double theta_max = M_PI / 2.0; 
 
     std::mt19937 gen(std::random_device{}());
@@ -124,9 +121,9 @@ int main(int argc, char** argv) {
     std::vector<double> surfaceCharge(surfaceMesh->nodes.size(), 0.0);
     
     // Insert the array into the mesh once before the loop starts
-    surfaceMesh->getCellData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
+    surfaceMesh->getPointData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
     // pointer to that specific array
-    auto exportedChargePtr = surfaceMesh->getCellData().getScalarData("SurfaceCharge");
+    auto exportedChargePtr = surfaceMesh->getPointData().getScalarData("SurfaceCharge");
 
     // ========================================================================
     // START CHARGING ITERATIONS
@@ -135,22 +132,56 @@ int main(int argc, char** argv) {
 
         std::cout << "\n==================================================" << std::endl;
         std::cout << "       CHARGE DEPOSITION ITERATION " << (iter + 1) << " / " << num_charge_iterations << std::endl;
-        std::cout << "  [*] Launching a batch of " << num_particles << " particles..." << std::endl;
         
-        int hit_count = 0;
-        std::vector<Particle> all_particles; 
+        // --------------------------------------------------
+        // PHYSICS SETUP (Sheath Velocities & Ratios)
+        // --------------------------------------------------
+        double V_bias = params.get("V_bias");
+        double d_sh = params.get("d_sh");
+        
+        // E = V / d. Simplified Sheath energy estimate.
+        double E_ext = V_bias / d_sh; 
+        
+        // POSITIVE IONS
+        double mass_ion = params.get("mass");
+        double q_ion = 1.0;
+        double v_ion = std::sqrt(2.0 * q_ion * E_ext * d_sh / mass_ion);
+        double n_theta_ion = 100.0; // tightly collimated beam for ions
+        double dt_ion = 0.01; // timestep for ions
+        
+        // ELECTRONS
+        double mass_ratio = 1836.0; // Proton-to-electron mass ratio
+        double mass_elec = mass_ion / mass_ratio;
+        double q_elec = -1.0;
+        double v_elec = v_ion * std::sqrt(mass_ratio); // thermal velocity approximation
+        double n_theta_elec = 1.0;  // broad, isotropic angular distribution for electrons
+        double dt_elec = dt_ion / std::sqrt(mass_ratio); // micro-timestep to prevent numerical tunneling; i think this might require some fine tuning later on
 
+        std::vector<Particle> exported_ions; 
+        std::vector<Particle> exported_elecs; 
+        
+        // The pseudo-time step (Delta t_c) controls how much charge is deposited per hit; 
+        // this is a tunable parameter that may also require some fine tuning to find the right balance for stable convergence i think
+        // We split the weight into two to simulate sheath filtering. 
+        // By lowering the electron weight, we allow positive charge to dominate the trench floor
+        double macro_charge_weight_ion = 0.5; 
+        double macro_charge_weight_elec = 0.15; // Tuned down to 30% of the ion flux 
+        int particles_to_export = std::min(num_particles, 30); // limit the number of particles to export for visualization
+        
         // --------------------------------------------------
-        // RAY TRACING
+        // ION TRACING
         // --------------------------------------------------
+        std::cout << "  [*] Launching a batch of " << num_particles << " ions..." << std::endl;
+        int hit_count_ion = 0;
+
         for (int i = 0; i < num_particles; ++i) {
             double start_x = dist_x(gen);
             double theta = samplePowerCosineAngle(gen, n_theta_ion, theta_max);
 
-            double v_x = ion_maxVel * std::sin(theta);
-            double v_y = -ion_maxVel * std::cos(theta); 
+            double v_x = v_ion * std::sin(theta);
+            double v_y = -v_ion * std::cos(theta); 
 
-            Particle particle(ion_mass, 1.0, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
+            Particle particle(mass_ion, q_ion, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
             bool active = true;
 
             while (active) {
@@ -164,20 +195,22 @@ int main(int argc, char** argv) {
                     E_y = EyPtr->at(cell_idx);
                 }
 
-                particle.advanceTimeStep(dt, E_x, E_y);
+                particle.advanceTimeStep(dt_ion, E_x, E_y);
 
                 double dx = particle.position[0] - old_pos[0];
                 double dy = particle.position[1] - old_pos[1];
+
                 double step_distance = sqrt(dx*dx + dy*dy);
 
-                std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
-            
-                int hit_id = collider.checkCollision(old_pos, direction, step_distance);
-                double macro_charge_weight = 0.5; // The pseudo-time step (Delta t_c) controls how much charge is deposited per hit;
-                if (hit_id >= 0) {
-                    surfaceCharge[hit_id] += particle.charge * macro_charge_weight; 
-                    hit_count++;
-                    active = false; 
+                // Only check for collisions if the particle actually moves, avoiding div0
+                if (step_distance > 1e-12) {
+                    std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
+                    int hit_id = collider.checkCollision(old_pos, direction, step_distance);
+                    if (hit_id >= 0) {
+                        surfaceCharge[hit_id] += particle.charge * macro_charge_weight_ion; 
+                        hit_count_ion++;
+                        active = false; 
+                    }
                 }
                 // Bounds checking (Kill particle if it flies out of the domain)
                 if (particle.position[1] < y_bottom_kill_bound || 
@@ -187,43 +220,114 @@ int main(int argc, char** argv) {
                     active = false; 
                 }
             }
-            all_particles.push_back(particle);
+            if (i < particles_to_export) {
+                exported_ions.push_back(particle);
+            }
         }
-        std::cout << "      -> " << hit_count << " particles successfully hit the surface." << std::endl;
+
+
+        // --------------------------------------------------
+        // ELECTRON TRACING
+        // --------------------------------------------------
+        std::cout << "  [*] Launching a batch of " << num_particles << " electrons..." << std::endl;
+        int hit_count_elec = 0;
+
+        for (int i = 0; i < num_particles; ++i) {
+            double start_x = dist_x(gen);
+            double theta = samplePowerCosineAngle(gen, n_theta_elec, theta_max);
+
+            double v_x = v_elec * std::sin(theta);
+            double v_y = -v_elec * std::cos(theta); 
+
+            Particle particle(mass_elec, q_elec, {start_x, start_y, 0.0}, {v_x, v_y, 0.0});
+            bool active = true;
+
+            while (active) {
+                std::array<double, 3> old_pos = particle.position;
+                double E_x = 0.0;
+                double E_y = 0.0;
+
+                int cell_idx = cellSet->getIndex(particle.position);
+                if (cell_idx >= 0) {
+                    E_x = ExPtr->at(cell_idx);
+                    E_y = EyPtr->at(cell_idx);
+                }
+
+                particle.advanceTimeStep(dt_elec, E_x, E_y);
+
+                double dx = particle.position[0] - old_pos[0];
+                double dy = particle.position[1] - old_pos[1];
+
+                double step_distance = sqrt(dx*dx + dy*dy);
+
+                // Only check for collisions if the particle actually moves, avoiding div0
+                if (step_distance > 1e-12) {
+                    std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
+                    int hit_id = collider.checkCollision(old_pos, direction, step_distance);
+                    if (hit_id >= 0) {
+                        surfaceCharge[hit_id] += particle.charge * macro_charge_weight_elec; 
+                        hit_count_elec++;
+                        active = false; 
+                    }
+                }
+                // Bounds checking (Kill particle if it flies out of the domain)
+                if (particle.position[1] < y_bottom_kill_bound || 
+                    particle.position[1] > y_top_kill_bound || 
+                    std::abs(particle.position[0]) > x_kill_bound) {
+                    
+                    active = false; 
+                }
+            }
+            if (i < particles_to_export) {
+                exported_elecs.push_back(particle);
+            }
+        }
+
+        std::cout << "      -> Hits: " << hit_count_ion << " Ions | " << hit_count_elec << " Electrons." << std::endl;
+
 
         // --------------------------------------------------
         // EXPORT PARAVIEW DATA (Per Iteration)
         // --------------------------------------------------
         std::cout << "  [*] Exporting charge distribution to ParaView..." << std::endl;
         std::string charge_filename = "02_trench_with_charge_iter" + std::to_string(iter) + ".vtp";
-        
-        // Note: In a production code, consider updating the array rather than inserting a new one 
-        // to prevent the .vtp file from bloating with multiple "SurfaceCharge" arrays, 
-        // but for prototype visualization, this will work.
+
         *exportedChargePtr = surfaceCharge;
         viennals::VTKWriter<double>(surfaceMesh, charge_filename).apply();
         std::cout << "      -> Saved: '" << charge_filename << "'" << std::endl;
 
         std::cout << "  [*] Exporting sample particle trajectories..." << std::endl;
-        auto pathMesh = viennals::Mesh<double>::New();
-        int paths_to_export = std::min(num_particles, 30); 
-        
-        for (int i = 0; i < paths_to_export; ++i) {
-            const auto& ion_path = all_particles[i].trajectory; 
-            unsigned int current_nodes = pathMesh->nodes.size();
-            
-            for (size_t j = 0; j < ion_path.size(); ++j) {
-                pathMesh->nodes.push_back(ion_path[j]);
+
+        // Export Ion paths
+        auto pathMeshIon = viennals::Mesh<double>::New();
+        for (const auto& p : exported_ions) {
+            unsigned int current_nodes = pathMeshIon->nodes.size();
+            for (size_t j = 0; j < p.trajectory.size(); ++j) {
+                pathMeshIon->nodes.push_back(p.trajectory[j]);
                 if (j > 0) {
-                    unsigned int idx1 = static_cast<unsigned int>(current_nodes + j - 1);
-                    unsigned int idx2 = static_cast<unsigned int>(current_nodes + j);
-                    pathMesh->insertNextLine({idx1, idx2});
+                    pathMeshIon->insertNextLine({static_cast<unsigned int>(current_nodes + j - 1), static_cast<unsigned int>(current_nodes + j)});
                 }
             }
         }
-        std::string path_filename = "03_ion_trajectories_iter" + std::to_string(iter) + ".vtp";
-        viennals::VTKWriter<double>(pathMesh, path_filename).apply();
-        std::cout << "      -> Saved: '" << path_filename << "'" << std::endl;
+        std::string path_filename_ion = "03a_ion_trajectories_iter" + std::to_string(iter) + ".vtp";
+        viennals::VTKWriter<double>(pathMeshIon, path_filename_ion).apply();
+        std::cout << "      -> Saved: '" << path_filename_ion << "'" << std::endl;
+
+        // Export Electron paths
+        auto pathMeshElec = viennals::Mesh<double>::New();
+        for (const auto& p : exported_elecs) {
+            unsigned int current_nodes = pathMeshElec->nodes.size();
+            for (size_t j = 0; j < p.trajectory.size(); ++j) {
+                pathMeshElec->nodes.push_back(p.trajectory[j]);
+                if (j > 0) {
+                    pathMeshElec->insertNextLine({static_cast<unsigned int>(current_nodes + j - 1), static_cast<unsigned int>(current_nodes + j)});
+                }
+            }
+        }
+        std::string path_filename_elec = "03b_elec_trajectories_iter" + std::to_string(iter) + ".vtp";
+        viennals::VTKWriter<double>(pathMeshElec, path_filename_elec).apply();
+        std::cout << "      -> Saved: '" << path_filename_elec << "'" << std::endl;
+
 
         // --------------------------------------------------
         // PHASE 4: POISSON SOLVER & FIELD MAPPING
@@ -235,7 +339,7 @@ int main(int argc, char** argv) {
         chargeDensityPtr->assign(num_cells, 0.0);
 
         for (size_t i = 0; i < surfaceCharge.size(); ++i) {
-            if (surfaceCharge[i] > 0.0) {
+            if (std::abs(surfaceCharge[i]) > 1e-12) {
                 std::array<double, 3> node_coord = surfaceMesh->nodes[i];
                 std::array<double, 3> normal = normals->at(i);
 
