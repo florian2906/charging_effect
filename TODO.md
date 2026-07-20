@@ -1,5 +1,7 @@
 # Charging Effect Simulation
 
+* Prepare for meeting with Tobias - review code, prepare questions, visualizations, suggestions for the next steps
+
 ### DONE
 
 * [x] **Framework Initialization:** Integrated ViennaPS, ViennaLS, and parameter parsing.
@@ -32,6 +34,18 @@
 
   * [x] Exporting distinct .vtp and .vtu files per iteration for ParaView.
 
+* [x] **Explicit Charge-Continuity Equation:**
+
+  * [x] Refactor particle hits into normalized Fluxes ($\Gamma_i, \Gamma_e$).
+
+  * [x] Update charge using a pseudo-time step ($\Delta t_c$) and Eq. 4 from the literature summary.
+
+* [x] **Charge Leakage Model:**
+
+  * [x] Implement surface leakage/decay ($\nu_{leak}$).
+
+  * [x] Implement bottom-tapering near the conductive substrate to prevent field singularities.
+
 ___
 
 ### TODO
@@ -48,17 +62,11 @@ ___
 
   * [x] Replace hardcoded `maxVel` in `Parameters.txt` with sheath-potential-derived initial velocities ($v_0 = \sqrt{2q|E_{ext}|d_{sh} / m}$).
 
-* [ ] **Explicit Charge-Continuity Equation:**
-
-  * [ ] Refactor particle hits into normalized Fluxes ($\Gamma_i, \Gamma_e$).
-
-  * [ ] Update charge using a pseudo-time step ($\Delta t_c$) and Eq. 4 from the literature summary.
-
-* [ ] **Charge Leakage Model:**
-
-  * [ ] Implement surface leakage/decay ($\nu_{leak}$).
-
-  * [ ] Implement bottom-tapering near the conductive substrate to prevent field singularities.
+* [ ] **Material-Aware Electrostatics:**
+  
+  * [ ] Upgrade the Poisson solver to recognize different material IDs from the volumetric grid.
+  
+  * [ ] Apply specific dielectric constants ($\epsilon_r$) for the mask (e.g., 3.9 for SiO2) and gas/vacuum.
 
 * [ ] **Link to reactor scale simulation:**
   
