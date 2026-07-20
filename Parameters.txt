@@ -3,17 +3,17 @@ gridDelta = .5 # um
 xExtent = 100. # um
 
 # Geometry
-trenchWidth = 40   # um
+trenchWidth = 20   # um
 trenchHeight = 170 # um
 maskHeight = 20.
 taperAngle = 0.    # degrees
 
 # Process
-numRaysPerPoint = 1000
+numRaysPerPoint = 3000
 sticking = .1
 power = 100.
 mass = 1.0          # Normalized Ion mass
-V_bias = 400.0      # Sheath Voltage (Volts)
+V_bias = 50.0      # Sheath Voltage (Volts)
 d_sh = 1000.0       # Sheath thickness (um)
-numChargeIterations = 4
+numChargeIterations = 10
 

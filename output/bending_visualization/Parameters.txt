@@ -1,0 +1,19 @@
+# Domain
+gridDelta = .5 # um
+xExtent = 100. # um
+
+# Geometry
+trenchWidth = 20   # um
+trenchHeight = 170 # um
+maskHeight = 20.
+taperAngle = 0.    # degrees
+
+# Process
+numRaysPerPoint = 3000
+sticking = .1
+power = 100.
+mass = 1.0          # Normalized Ion mass
+V_bias = 50.0      # Sheath Voltage (Volts)
+d_sh = 1000.0       # Sheath thickness (um)
+numChargeIterations = 10
+
