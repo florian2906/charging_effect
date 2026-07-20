@@ -159,15 +159,17 @@ int main(int argc, char** argv) {
 
         std::vector<Particle> exported_ions; 
         std::vector<Particle> exported_elecs; 
-        
-        // The pseudo-time step (Delta t_c) controls how much charge is deposited per hit; 
-        // this is a tunable parameter that may also require some fine tuning to find the right balance for stable convergence i think
-        // We split the weight into two to simulate sheath filtering. 
-        // By lowering the electron weight, we allow positive charge to dominate the trench floor
+
+        // macro_charge_weight: Decouple numerical ray counts from physical charge.
+        // We launch equal numbers of rays for both species to ensure smooth statistics,
+        // but weight electrons lower to model the sheath's physical filtering effect.
         double macro_charge_weight_ion = 0.5; 
         double macro_charge_weight_elec = 0.15; // Tuned down to 30% of the ion flux 
         int particles_to_export = std::min(num_particles, 30); // limit the number of particles to export for visualization
         
+        std::vector<int> ion_hits(surfaceMesh->nodes.size(), 0);
+        std::vector<int> elec_hits(surfaceMesh->nodes.size(), 0);
+
         // --------------------------------------------------
         // ION TRACING
         // --------------------------------------------------
@@ -207,7 +209,7 @@ int main(int argc, char** argv) {
                     std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
                     int hit_id = collider.checkCollision(old_pos, direction, step_distance);
                     if (hit_id >= 0) {
-                        surfaceCharge[hit_id] += particle.charge * macro_charge_weight_ion; 
+                        ion_hits[hit_id]++;
                         hit_count_ion++;
                         active = false; 
                     }
@@ -265,7 +267,7 @@ int main(int argc, char** argv) {
                     std::array<double, 3> direction = {dx/step_distance, dy/step_distance, 0.0};
                     int hit_id = collider.checkCollision(old_pos, direction, step_distance);
                     if (hit_id >= 0) {
-                        surfaceCharge[hit_id] += particle.charge * macro_charge_weight_elec; 
+                        elec_hits[hit_id]++;
                         hit_count_elec++;
                         active = false; 
                     }
@@ -284,6 +286,27 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "      -> Hits: " << hit_count_ion << " Ions | " << hit_count_elec << " Electrons." << std::endl;
+
+        // --------------------------------------------------
+        // UPDATE CHARGE CONTINUITY
+        // --------------------------------------------------
+        std::cout << "  [*] Updating surface charge via Explicit Charge Continuity..." << std::endl;
+        
+        // pseudo-time step (move into Parameters.txt?)
+        double dt_c = 50000.0; 
+
+        for (size_t i = 0; i < surfaceCharge.size(); ++i) {
+            // Convert raw hits to dimensionless normalized fluxes (hits / total launched)
+            double gamma_i = static_cast<double>(ion_hits[i]) / num_particles;
+            double gamma_e = static_cast<double>(elec_hits[i]) / num_particles;
+
+            // Calculate the net charge rate taking into account particle charge and macroscopic weighting
+            double net_charge_rate = (q_ion * gamma_i * macro_charge_weight_ion) + 
+                                     (q_elec * gamma_e * macro_charge_weight_elec);
+            
+            // Advance the explicit time step: Sigma_new = Sigma_old + dt * rate
+            surfaceCharge[i] += dt_c * net_charge_rate;
+        }
 
 
         // --------------------------------------------------
