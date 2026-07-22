@@ -119,11 +119,23 @@ int main(int argc, char** argv) {
     int num_cells = cellSet->getElements().size();
 
     std::vector<double> surfaceCharge(surfaceMesh->nodes.size(), 0.0);
+    std::vector<double> ionFlux(surfaceMesh->nodes.size(), 0.0);
+    std::vector<double> ionEnergy(surfaceMesh->nodes.size(), 0.0);
+    std::vector<double> ionAngle(surfaceMesh->nodes.size(), 0.0);
     
     // Insert the array into the mesh once before the loop starts
     surfaceMesh->getPointData().insertNextScalarData(surfaceCharge, "SurfaceCharge");
-    // pointer to that specific array
+    surfaceMesh->getPointData().insertNextScalarData(ionFlux, "IonFlux");
+    surfaceMesh->getPointData().insertNextScalarData(ionEnergy, "IonEnergy");
+    surfaceMesh->getPointData().insertNextScalarData(ionAngle, "IonAngle");
+
+    // Pointers to the specific arrays inside the mesh memory
     auto exportedChargePtr = surfaceMesh->getPointData().getScalarData("SurfaceCharge");
+    auto exportedFluxPtr = surfaceMesh->getPointData().getScalarData("IonFlux");
+    auto exportedEnergyPtr = surfaceMesh->getPointData().getScalarData("IonEnergy");
+    auto exportedAnglePtr = surfaceMesh->getPointData().getScalarData("IonAngle");
+
+
 
     // ========================================================================
     // START CHARGING ITERATIONS
@@ -169,6 +181,10 @@ int main(int argc, char** argv) {
         
         std::vector<int> ion_hits(surfaceMesh->nodes.size(), 0);
         std::vector<int> elec_hits(surfaceMesh->nodes.size(), 0);
+        std::vector<double> ion_energy_sum(surfaceMesh->nodes.size(), 0);
+        std::vector<double> elec_energy_sum(surfaceMesh->nodes.size(), 0);
+        std::vector<double> ion_angle_sum(surfaceMesh->nodes.size(), 0);
+        std::vector<double> elec_angle_sum(surfaceMesh->nodes.size(), 0);
 
         // --------------------------------------------------
         // ION TRACING
@@ -210,6 +226,17 @@ int main(int argc, char** argv) {
                     int hit_id = collider.checkCollision(old_pos, direction, step_distance);
                     if (hit_id >= 0) {
                         ion_hits[hit_id]++;
+                        ion_energy_sum[hit_id] += particle.energy;
+
+                        // Calculate the angle of incidence relative to the surface normal
+                        std::array<double, 3> normal = normals->at(hit_id);
+                        double v_mag = std::sqrt(particle.velocity[0]*particle.velocity[0] + particle.velocity[1]*particle.velocity[1]);
+
+                        // Dot product of velocity and normal. (Normal points OUT, velocity points IN, so we negate)
+                        double dot_prod = -(particle.velocity[0] * normal[0] + particle.velocity[1] * normal[1]);
+                        double cos_theta = std::max(-1.0, std::min(1.0, dot_prod / v_mag)); // Clamp to prevent NaN
+                        ion_angle_sum[hit_id] += std::acos(cos_theta);
+
                         hit_count_ion++;
                         active = false; 
                     }
@@ -268,6 +295,17 @@ int main(int argc, char** argv) {
                     int hit_id = collider.checkCollision(old_pos, direction, step_distance);
                     if (hit_id >= 0) {
                         elec_hits[hit_id]++;
+                        elec_energy_sum[hit_id] += particle.energy;
+
+                        // Calculate the angle of incidence relative to the surface normal
+                        std::array<double, 3> normal = normals->at(hit_id);
+                        double v_mag = std::sqrt(particle.velocity[0]*particle.velocity[0] + particle.velocity[1]*particle.velocity[1]);
+                        
+                        // Dot product of velocity and normal. (Normal points OUT, velocity points IN, so we negate)
+                        double dot_prod = -(particle.velocity[0] * normal[0] + particle.velocity[1] * normal[1]);
+                        double cos_theta = std::max(-1.0, std::min(1.0, dot_prod / v_mag)); // Clamp to prevent NaN
+                        elec_angle_sum[hit_id] += std::acos(cos_theta);
+                        
                         hit_count_elec++;
                         active = false; 
                     }
@@ -287,6 +325,23 @@ int main(int argc, char** argv) {
 
         std::cout << "      -> Hits: " << hit_count_ion << " Ions | " << hit_count_elec << " Electrons." << std::endl;
 
+
+        // --------------------------------------------------
+        // CALCULATE AVERAGES FOR PROFILE EVOLUTION
+        // --------------------------------------------------
+        for (size_t i = 0; i < surfaceMesh->nodes.size(); ++i) {
+            // Store the normalized dimensionless flux
+            (*exportedFluxPtr)[i] = static_cast<double>(ion_hits[i]) / num_particles;
+
+            if (ion_hits[i] > 0) {
+                (*exportedEnergyPtr)[i] = ion_energy_sum[i] / ion_hits[i];
+                (*exportedAnglePtr)[i] = ion_angle_sum[i] / ion_hits[i];
+            } else {
+                (*exportedEnergyPtr)[i] = 0.0;
+                (*exportedAnglePtr)[i] = 0.0;
+            }
+        }
+
         // --------------------------------------------------
         // UPDATE CHARGE CONTINUITY
         // --------------------------------------------------
@@ -297,7 +352,7 @@ int main(int argc, char** argv) {
 
         for (size_t i = 0; i < surfaceCharge.size(); ++i) {
             // Convert raw hits to dimensionless normalized fluxes (hits / total launched)
-            double gamma_i = static_cast<double>(ion_hits[i]) / num_particles;
+            double gamma_i = (*exportedFluxPtr)[i];
             double gamma_e = static_cast<double>(elec_hits[i]) / num_particles;
 
             // Calculate the net charge rate taking into account particle charge and macroscopic weighting

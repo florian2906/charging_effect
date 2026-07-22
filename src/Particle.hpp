@@ -6,12 +6,13 @@ class Particle {
     public:
     double mass;
     double charge;
+    double energy;
     std::array<double, 3> position;
     std::array<double, 3> velocity;
     std::vector<std::array<double, 3>> trajectory; 
 
     Particle(double m, double q, const std::array<double, 3>& pos, const std::array<double, 3>& vel)
-        : mass(m), charge(q), position(pos), velocity(vel) {}
+        : mass(m), charge(q), position(pos), velocity(vel), energy(0.5 * m * (vel[0]*vel[0] + vel[1]*vel[1])) {}
 
     void advanceTimeStep(double dt, double E_x, double E_y) {
         velocity[0] += charge / mass * E_x * dt;
@@ -19,6 +20,8 @@ class Particle {
 
         position[0] += velocity[0] * dt;
         position[1] += velocity[1] * dt;
+
+        energy = 0.5 * mass * (velocity[0]*velocity[0] + velocity[1]*velocity[1]);
 
         trajectory.push_back(position);
     }
