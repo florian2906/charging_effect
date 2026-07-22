@@ -295,6 +295,15 @@ int main(int argc, char** argv) {
         // pseudo-time step (move into Parameters.txt?)
         double dt_c = 50000.0; 
 
+        
+        // LEAKAGE TEST: TODO Fix this
+
+        // Leakage parameters (also move into Parameters.txt later?)
+        double trench_bottom = -(params.get("trenchHeight"));
+        double nu_surf = 1e-5;     // Surface leakage rate (per second)
+        double nu_bottom = 1e-4;   // Bottom leakage rate (per second)
+        double lambda_bottom = 15; // Decay length of bottom leakage (um)
+
         for (size_t i = 0; i < surfaceCharge.size(); ++i) {
             // Convert raw hits to dimensionless normalized fluxes (hits / total launched)
             double gamma_i = static_cast<double>(ion_hits[i]) / num_particles;
@@ -304,8 +313,18 @@ int main(int argc, char** argv) {
             double net_charge_rate = (q_ion * gamma_i * macro_charge_weight_ion) + 
                                      (q_elec * gamma_e * macro_charge_weight_elec);
             
-            // Advance the explicit time step: Sigma_new = Sigma_old + dt * rate
-            surfaceCharge[i] += dt_c * net_charge_rate;
+            // Get node Y-coordinate to calculate distance to the conductive bottom
+            double y_pos = surfaceMesh->nodes[i][1];
+            double distance_to_bottom = std::max(0.0, y_pos - trench_bottom);
+            
+            // Calculate localized leakage rate (spikes near the bottom)
+            double local_nu = nu_surf + nu_bottom * std::exp(-distance_to_bottom / lambda_bottom);
+            
+            // Calculate how much charge leaks away this timestep
+            double leakage_rate = local_nu * surfaceCharge[i];
+
+            // Advance the explicit time step: Sigma_new = Sigma_old + dt * (Sources - Losses)
+            surfaceCharge[i] += dt_c * (net_charge_rate - leakage_rate);
         }
 
 

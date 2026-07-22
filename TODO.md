@@ -1,6 +1,6 @@
 # Charging Effect Simulation
 
-* Prepare for meeting with Tobias - review code, prepare questions, visualizations, suggestions for the next steps
+* Fix leakage issue -> check paraview visualization, error on bottom of trench, neg. potential moving upwards, switching with pos. after each other step??
 
 ### DONE
 
@@ -91,3 +91,11 @@ ___
   * [ ] Clean up ambigous loop counters
   
   * [ ] Add proper comments, docstrings, update `README.md` 
+
+  * [ ] Benchmark, find bottle neck and improve
+
+  * [ ] GPU parallelization? -> Ray tracing bottle neck?
+
+
+SF6O2 Plasma Etchcing
+surface charge as coverage
