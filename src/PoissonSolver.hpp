@@ -30,8 +30,11 @@ namespace PoissonSolver {
             std::vector<double> next_potential(*potentialPtr);
             double max_change = 0.0;
 
-            if (step % 100 == 0) {
-            std::cout << "      -> Iterating step " << step << " / " << numSteps << std::endl;
+            if (step == 0) {
+                std::cout << "      -> Iterating step   " << step << " / " << numSteps << std::endl;
+            }
+            if (step % 100 == 0 and step != 0) {
+                std::cout << "      -> Iterating step " << step << " / " << numSteps << std::endl;
             }
         
             for (int i = 0; i < num_cells; ++i) {

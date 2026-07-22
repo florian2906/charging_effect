@@ -1,19 +1,29 @@
 # Domain
-gridDelta = .5 # um
+gridDelta = .1 # um
 xExtent = 100. # um
 
 # Geometry
-trenchWidth = 20   # um
-trenchHeight = 170 # um
+trenchWidth = 60   # um
+trenchHeight = 30 # um
 maskHeight = 20.
 taperAngle = 0.    # degrees
 
 # Process
-numRaysPerPoint = 3000
+numRaysPerPoint = 1000
 sticking = .1
 power = 100.
 mass = 1.0          # Normalized Ion mass
 V_bias = 50.0      # Sheath Voltage (Volts)
 d_sh = 1000.0       # Sheath thickness (um)
-numChargeIterations = 10
+numChargeIterations = 1
 
+# Charging Kinetics
+numChargeIterations = 1
+dt_c = 1000.0       # Pseudo-time step for charge accumulation
+ionWeight = 0.5     # Sheath filter ratio for ions
+elecWeight = 0.15   # Sheath filter ratio for electrons
+
+# Profile Etching
+numEtchSteps = 3
+etchTimeStep = 10.0     # Time to run the advector per step
+etchYieldFactor = 10.0  # Multiplier to scale physical yield
